@@ -121,6 +121,11 @@ struct NetworkEndpoint: Identifiable, Hashable, Sendable {
         }
     }
     var isListening: Bool { protocolNumber == 6 && tcpState == 1 }
+    var isBoundDatagram: Bool { protocolNumber == 17 && localPort > 0 && remotePort == 0 }
+    var isOpenPort: Bool { isListening || isBoundDatagram }
+    var isConnected: Bool { remotePort > 0 }
+    // Ports are identifiers, not localized quantities (3100, never 3,100).
+    var localPortDisplay: String { String(localPort) }
     var localDisplay: String { Self.endpoint(address: localAddress, port: localPort) }
     var remoteDisplay: String { remotePort == 0 ? "—" : Self.endpoint(address: remoteAddress, port: remotePort) }
 
@@ -128,6 +133,79 @@ struct NetworkEndpoint: Identifiable, Hashable, Sendable {
         let host = address == "0.0.0.0" || address == "::" || address.isEmpty ? "*" : address
         return host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
     }
+}
+
+struct ProcessNetworkEndpoint: Identifiable, Hashable, Sendable {
+    let process: ProcessSnapshot
+    let endpoint: NetworkEndpoint
+
+    var id: String { "\(process.identity.id)-\(endpoint.id)" }
+}
+
+enum PortDisplayFilter: String, CaseIterable, Identifiable, Sendable {
+    case open = "Open"
+    case connected = "Connected"
+    case all = "All Sockets"
+
+    var id: String { rawValue }
+}
+
+enum LLMFitUseCase: String, CaseIterable, Identifiable, Sendable {
+    case general
+    case coding
+    case reasoning
+    case chat
+    case multimodal
+    case embedding
+
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+}
+
+struct LLMFitSystem: Equatable, Sendable {
+    let cpuName: String
+    let cpuCores: Int
+    let totalRAMGB: Double
+    let availableRAMGB: Double
+    let gpuName: String?
+    let gpuVRAMGB: Double?
+    let backend: String
+    let unifiedMemory: Bool
+}
+
+struct LLMFitRecommendation: Identifiable, Equatable, Sendable {
+    let name: String
+    let provider: String
+    let parameterCount: String
+    let paramsB: Double?
+    let score: Double
+    let qualityScore: Double?
+    let speedScore: Double?
+    let fitScore: Double?
+    let contextScore: Double?
+    let fitLevel: String
+    let runMode: String
+    let category: String
+    let estimatedTPS: Double
+    let bestQuant: String
+    let memoryRequiredGB: Double
+    let memoryAvailableGB: Double
+    let utilizationPercent: Double
+    let contextLength: Int
+    let usableContext: Int?
+    let runtime: String
+    let installed: Bool
+    let ollamaName: String?
+    let notes: [String]
+
+    var id: String { "\(name)-\(bestQuant)-\(runtime)" }
+}
+
+struct LLMFitAnalysis: Equatable, Sendable {
+    let system: LLMFitSystem?
+    let recommendations: [LLMFitRecommendation]
+    let analyzedAt: Date
+    let executablePath: String
 }
 
 struct SystemSnapshot: Sendable {
@@ -233,6 +311,9 @@ enum MainSection: String, CaseIterable, Identifiable {
     case applications = "Applications"
     case tree = "Process Tree"
     case memory = "Memory Investigation"
+    case storage = "Storage Growth"
+    case ports = "Ports"
+    case llmFit = "LLM Fit"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -240,6 +321,23 @@ enum MainSection: String, CaseIterable, Identifiable {
         case .applications: "square.stack.3d.up"
         case .tree: "point.3.connected.trianglepath.dotted"
         case .memory: "memorychip"
+        case .storage: "internaldrive"
+        case .ports: "network"
+        case .llmFit: "brain.head.profile"
+        }
+    }
+
+    var showsSystemSummary: Bool {
+        switch self {
+        case .processes, .applications, .tree, .memory: true
+        case .storage, .ports, .llmFit: false
+        }
+    }
+
+    var showsProcessScope: Bool {
+        switch self {
+        case .processes, .applications, .tree, .memory: true
+        case .storage, .ports, .llmFit: false
         }
     }
 }

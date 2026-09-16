@@ -1,8 +1,8 @@
 # Topps
 
-Topps is a native macOS process explorer for developers. It combines the immediacy of `top` with application grouping, process ancestry, physical-footprint memory accounting, short histories, safe termination controls, and on-demand diagnostics.
+Topps is a native macOS process explorer for developers. It combines the immediacy of `top` with application grouping, process ancestry, physical-footprint memory accounting, short histories, port ownership, safe termination controls, and on-demand diagnostics.
 
-Everything stays on the Mac. Topps has no network code, cloud service, analytics, telemetry, or third-party dependency.
+Core monitoring stays on the Mac. Topps has no cloud service, analytics, or telemetry. The optional LLM Fit screen invokes a separately installed `llmfit` executable on demand; it is not bundled and does not remain running.
 
 ## What it shows
 
@@ -15,6 +15,9 @@ Everything stays on the Mac. Topps has no network code, cloud service, analytics
 - A Memory Investigation view for largest, fastest-growing, and significant detached processes
 - A right-side inspector for the full command, executable, working directory, start/runtime, I/O, ancestry, children, accessibility, and sparklines
 - Native per-process TCP/UDP endpoint inspection showing listening ports, established peers, protocol, state, and file descriptor
+- A system-wide Ports explorer mapping TCP listeners, bound UDP ports, and active connections to process name, PID, user, and command
+- An on-demand Storage Growth explorer for comparing folder snapshots, surfacing growing paths, caches, dependency trees, build output, large files, and conservative external-SSD/cloud candidates
+- An optional LLM Fit screen that uses [llmfit](https://github.com/AlexsJones/llmfit) to rank local models by hardware fit, speed, quality, context, runtime, quantization, and use case
 - Explicit one-shot `vmmap`, `sample`, and `lsof` diagnostics with searchable, copyable, saveable output
 - Optional menu-bar status, launch at login, CSV/JSON export, pinning, and memory-growth watches
 
@@ -29,12 +32,21 @@ Add release screenshots here after selecting representative light- and dark-mode
 - macOS 14 Sonoma or newer
 - Xcode 16 or newer (built and tested with Xcode 26.4 / Swift 6.3)
 - No root privileges are needed for normal operation
+- Optional: `brew install llmfit` to enable the LLM Fit analysis screen
 
 ## Build and run
 
+From the repository root, one command builds an optimized Release app and restarts Topps with that build:
+
+```sh
+./run.sh
+```
+
+The script keeps Derived Data under `.build/DerivedData`, which is ignored by Git. After a successful build it requests a normal quit of any running Topps instance, waits for it to exit, and opens the exact newly built app. This prevents an old instance from silently staying active after an update. Use `TOPPS_CONFIGURATION=Debug ./run.sh` when debugging.
+
 Open [Topps.xcodeproj](Topps.xcodeproj) in Xcode, select the **Topps** scheme and **My Mac**, then press **Run**.
 
-Command line:
+Equivalent manual command:
 
 ```sh
 xcodebuild \
@@ -72,7 +84,7 @@ For distribution, choose a Developer ID signing team and archive in Xcode. The c
 The process list never depends on continuously launching `top`, `ps`, `vmmap`, or `lsof`. A small C bridge uses public Darwin interfaces:
 
 - `proc_listallpids`, `proc_pidinfo`, `proc_pidpath`, and `proc_pid_rusage` for enumeration and process metrics
-- `proc_pidinfo(PROC_PIDLISTFDS)` and `proc_pidfdinfo(PROC_PIDFDSOCKETINFO)` for selected-process network endpoints
+- `proc_pidinfo(PROC_PIDLISTFDS)` and `proc_pidfdinfo(PROC_PIDFDSOCKETINFO)` for selected-process endpoints and on-demand system-wide port snapshots
 - `sysctl(KERN_PROCARGS2)` for command arguments when permitted
 - Mach host VM and CPU statistics for the system summary
 - `sysctl(vm.swapusage)` for swap usage
@@ -81,7 +93,23 @@ The process list never depends on continuously launching `top`, `ps`, `vmmap`, o
 
 CPU percentage is calculated from the difference between two cumulative CPU-time samples divided by elapsed wall-clock time. It is not the cumulative CPU time. A process can exceed 100% when it uses more than one logical CPU.
 
-History is an in-memory ring buffer capped at 300 points per visible process at the default one-second interval. Exited-process history receives a short grace period and is then discarded. No history database is created.
+History uses in-place circular buffers capped at 300 points per process at the default one-second interval. Sampling overwrites old slots instead of copying and shifting every process's history array. Processes not seen for 60 seconds are discarded before ingestion, including after a long pause. No process-history database is created.
+
+The Ports explorer is deliberately not part of the live sampling loop. Entering it starts one background scan if no snapshot exists or the last successful scan is at least **10 seconds** old. **Scan Now** bypasses that age check. Each scan discovers current processes independently, even while monitoring is paused or frozen; it does not reuse the paused process list or advance the CPU sampling baselines. Socket inspection is attempted even if unrelated task metrics are unavailable. Port numbers are displayed as plain identifiers (for example, `3100`). Protected processes may still deny socket access.
+
+LLM Fit's first analysis is manual. Returning to the page refreshes an existing analysis when it is at least **5 minutes** old and `llmfit` is installed. Topps runs `llmfit --json system` followed by a filtered `llmfit recommend --json`, reads the JSON, and lets the command exit. Automatic retries are also spaced at least five minutes apart if analysis fails; **Analyze This Mac** can retry immediately.
+
+Both pages keep cached results and filters visible during refresh, show an updated timestamp or refreshing indicator, and allow only one scan per feature at a time. Navigation does not add a polling timer or start work for hidden pages. A memory-safety pause suppresses automatic page-entry work; explicit scan buttons remain available. Processes, Applications, Process Tree, and Memory Investigation continue sharing the existing sampler. Entering Storage Growth only loads saved history and never starts a filesystem walk.
+
+Storage analysis is also deliberately on-demand. Choose a focused folder—or Home for a broad baseline—and capture a snapshot. A later scan of the same root compares exact retained paths and highlights what grew. Topps measures allocated disk space as well as logical file size, never follows interior symbolic links, and does not descend into a different mounted volume. The filesystem walk uses native post-order traversal and fixed-capacity heaps for the largest folders, recognized cleanup opportunities, and files of at least 100 MB. Only the best 1,400 candidates cross into Swift. The native traversal also holds directory entries while walking, so exceptionally wide directories still have a temporary cost; the scan guard remains active.
+
+Storage snapshots are saved locally at `~/Library/Application Support/Topps/storage-history.json`, with at most 24 snapshots per root and 120 overall. Folder rows are hierarchical and overlap, so their values must not be added together. Recommendations are review prompts only: Topps can reveal a path in Finder or copy it, but never deletes, moves, uploads, or archives data.
+
+The main process list uses a reusable `NSTableView`; Process Tree and Applications use `NSOutlineView` with stable items. Metric changes update existing visible cells directly; topology changes reload the outline while preserving expansion and selection. Tied sort values have a stable PID order to avoid needless reloads. All process icons share a cost-limited cache of small raster images. Background sampling drains Foundation autoreleases every tick and releases its Mach host-port reference.
+
+As a final guardrail, Topps monitors its own physical footprint and pauses sampling with a warning if it reaches 1 GB. Storage scans additionally stop at a lower guardrail and never save a partial snapshot. Cancelling a scan keeps it marked active until its worker exits so scans cannot overlap. The sidebar measures Topps's current footprint independently every five seconds, even while the process list is paused; paused process rows remain historical readings.
+
+Memory regression coverage includes 4,000 rendered updates each for Process Tree and Applications (320 processes, process churn, expansion, collapse, and selection), with a post-warm-up footprint-growth limit, plus a 30,000-file storage scan. These bounded tests cannot prove the absence of every possible long-session leak; they exercise the actual live UI as well as the scanner.
 
 ## Why App Sandbox is disabled
 
@@ -125,6 +153,8 @@ SIGTERM is the primary termination action. SIGKILL is secondary and requires con
 - No telemetry or analytics exists
 - Exports are written only to the location chosen in the save panel
 - Diagnostics may contain sensitive commands, paths, filenames, or network endpoints; review output before sharing it
+- Storage history contains local paths and aggregate sizes, remains on this Mac, and is never uploaded. Storage recommendations never perform an automatic delete, move, or cloud transfer
+- The first LLM Fit analysis requires an explicit click; existing analyses may refresh when returning to the page. Topps does not install `llmfit`; consult that project's own privacy and network behavior before enabling optional integrations
 - Launch at Login uses `SMAppService`, and can be disabled at any time in Settings
 
 ## Known limitations
@@ -135,5 +165,8 @@ SIGTERM is the primary termination action. SIGKILL is secondary and requires con
 - Application grouping is heuristic for reparented and detached processes
 - Working directories can disappear or become unreadable between selection and inspection
 - A process may exit between enumeration, inspection, signaling, or diagnostics; Topps treats this as a normal race
+- Protected and other-user sockets may be absent from a system-wide port snapshot because macOS denied inspection
+- Storage scans can omit unreadable paths. APFS clones, hard links, sparse files, purgeable data, and cloud-provider placeholders can make allocated and logical sizes differ from Finder or `du`
+- Storage growth is exact only for paths retained in both snapshots; renamed or moved items appear as a disappearance and a new path
 - Memory pressure is a compact local classification derived from host memory ratios; it is context, not Apple's private pressure-level implementation
 - Attention and sustained-growth labels prioritize investigation. They do not diagnose malware or memory leaks

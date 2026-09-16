@@ -8,6 +8,7 @@
 #define CPS_PATH_MAX 1024
 #define CPS_COMMAND_MAX 8192
 #define CPS_ADDRESS_MAX 64
+#define CPS_STORAGE_PATH_MAX 1024
 
 typedef struct {
     int32_t pid;
@@ -65,11 +66,32 @@ typedef struct {
     char remote_address[CPS_ADDRESS_MAX];
 } CPSNetworkEndpoint;
 
+typedef struct {
+    uint64_t allocated_bytes;
+    uint64_t logical_bytes;
+    uint64_t file_count;
+    int64_t modified_seconds;
+    int32_t is_directory;
+    char path[CPS_STORAGE_PATH_MAX];
+} CPSStorageEntry;
+
+typedef struct {
+    uint64_t allocated_bytes;
+    uint64_t logical_bytes;
+    uint64_t file_count;
+    uint64_t unreadable_item_count;
+    int32_t cancellation_reason;
+    int32_t error_code;
+} CPSStorageSummary;
+
+typedef int32_t (*CPSStorageCancellationCallback)(void);
+
 int32_t cps_list_pids(int32_t *buffer, int32_t capacity);
 int32_t cps_read_process(int32_t pid, CPSProcessInfo *output);
 int32_t cps_read_command(int32_t pid, char *buffer, int32_t capacity);
 int32_t cps_read_cwd(int32_t pid, char *buffer, int32_t capacity);
 int32_t cps_read_network_endpoints(int32_t pid, CPSNetworkEndpoint *buffer, int32_t capacity);
 int32_t cps_read_system(CPSSystemInfo *output);
+int32_t cps_scan_storage(const char *root_path, CPSStorageEntry *buffer, int32_t capacity, CPSStorageSummary *summary, CPSStorageCancellationCallback should_cancel);
 
 #endif

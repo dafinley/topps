@@ -4,6 +4,8 @@ import Foundation
 
 protocol ProcessDataProvider: Sendable {
     func sample() async -> SamplingResult
+    /// Fresh process discovery, independent of paused UI snapshots and sampling baselines.
+    func loadProcessesForPortScan() async -> [ProcessSnapshot]
     func loadWorkingDirectory(for pid: Int32) async -> String?
     func loadNetworkEndpoints(for pid: Int32) async -> [NetworkEndpoint]
 }
@@ -28,7 +30,21 @@ enum SystemMemoryAccounting {
 }
 
 actor ProcessHistoryStore {
-    private var storage: [ProcessIdentity: [HistoryPoint]] = [:]
+    // Reference-owned buffers are mutated in place. Extracting an Array from the
+    // dictionary before every append triggered copy-on-write for every process.
+    private final class Buffer {
+        var points: [HistoryPoint] = []
+        var next = 0
+        func append(_ point: HistoryPoint, capacity: Int) {
+            if points.count < capacity { points.append(point) }
+            else { points[next] = point; next = (next + 1) % capacity }
+        }
+        func ordered() -> [HistoryPoint] {
+            guard next > 0 else { return points }
+            return Array(points[next...]) + points[..<next]
+        }
+    }
+    private var storage: [ProcessIdentity: Buffer] = [:]
     private var lastSeen: [ProcessIdentity: Date] = [:]
     let capacity: Int
 
@@ -36,25 +52,25 @@ actor ProcessHistoryStore {
 
     func ingest(_ result: SamplingResult) {
         let now = result.timestamp
+        let stale = lastSeen.filter { now.timeIntervalSince($0.value) > 60 }.map(\.key)
+        for key in stale { storage[key] = nil; lastSeen[key] = nil }
         for process in result.processes {
-            var values = storage[process.identity, default: []]
-            values.append(HistoryPoint(
+            let buffer: Buffer
+            if let existing = storage[process.identity] { buffer = existing }
+            else { buffer = Buffer(); storage[process.identity] = buffer }
+            buffer.append(HistoryPoint(
                 timestamp: now,
                 cpu: process.cpuPercent,
                 footprint: process.physicalFootprint ?? 0,
                 resident: process.residentMemory ?? 0,
                 readDelta: process.diskReadDelta,
                 writeDelta: process.diskWriteDelta
-            ))
-            if values.count > capacity { values.removeFirst(values.count - capacity) }
-            storage[process.identity] = values
+            ), capacity: capacity)
             lastSeen[process.identity] = now
         }
-        let stale = lastSeen.filter { now.timeIntervalSince($0.value) > 60 }.map(\.key)
-        for key in stale { storage[key] = nil; lastSeen[key] = nil }
     }
 
-    func history(for identity: ProcessIdentity) -> [HistoryPoint] { storage[identity] ?? [] }
+    func history(for identity: ProcessIdentity) -> [HistoryPoint] { storage[identity]?.ordered() ?? [] }
 }
 
 enum ProcessGroupingService {

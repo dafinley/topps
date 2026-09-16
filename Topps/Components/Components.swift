@@ -1,6 +1,26 @@
 import AppKit
 import SwiftUI
 
+/// This small view measures independently, including while process data is paused.
+/// Publishing it through ToppsStore would invalidate the entire paused interface.
+struct SelfMemoryLabel: View {
+    @State private var footprint: UInt64?
+    var body: some View {
+        Text(footprint.map { "Topps \(ByteFormat.string($0))" } ?? "Topps —")
+            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            .help("Current Topps footprint, refreshed even when process sampling is paused.")
+            .task {
+                while !Task.isCancelled {
+                    var info = CPSProcessInfo()
+                    if cps_read_process(getpid(), &info) == 1 {
+                        footprint = info.physical_footprint > 0 ? info.physical_footprint : info.resident_bytes
+                    }
+                    do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                }
+            }
+    }
+}
+
 struct MetricCard: View {
     let title: String
     let value: String
@@ -9,7 +29,7 @@ struct MetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            Text(value).font(.system(.title3, design: .rounded, weight: .semibold)).contentTransition(.numericText())
+            Text(value).font(.system(.title3, design: .rounded, weight: .semibold))
             Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -51,15 +71,15 @@ struct MemoryBar: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 14) {
-                        legend("Wired", value: composition.wired, color: wiredColor, help: "Kernel and driver memory that cannot be compressed or paged out.")
-                        legend("Compressed", value: composition.compressed, color: compressedColor, help: "Compressed pages currently stored in physical RAM.")
-                        legend("Active", value: composition.active, color: activeColor, help: "Recently used application, system, and file-backed pages.")
+                        legend("Wired", value: composition.wired, color: wiredColor)
+                        legend("Compressed", value: composition.compressed, color: compressedColor)
+                        legend("Active", value: composition.active, color: activeColor)
                         Spacer(minLength: 0)
                     }
                     HStack(spacing: 14) {
-                        legend("Inactive/cache", value: composition.inactive, color: inactiveColor, help: "Pages not recently used. top counts these as used, but macOS can reclaim them.")
-                        legend("System/other", value: composition.systemOther, color: systemColor, help: "The small residual of top-style used memory not assigned to another Mach page state.")
-                        legend("Unused", value: composition.unused, color: unusedColor, help: "Free and speculative pages not counted as used by top.")
+                        legend("Inactive/cache", value: composition.inactive, color: inactiveColor)
+                        legend("System/other", value: composition.systemOther, color: systemColor)
+                        legend("Unused", value: composition.unused, color: unusedColor)
                         Spacer(minLength: 0)
                     }
                 }
@@ -88,7 +108,7 @@ struct MemoryBar: View {
         color.frame(width: max(0, width * CGFloat(value) / CGFloat(total)))
     }
 
-    private func legend(_ label: String, value: UInt64, color: Color, help: String) -> some View {
+    private func legend(_ label: String, value: UInt64, color: Color) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text("\(label) \(ByteFormat.string(value))")
@@ -96,7 +116,6 @@ struct MemoryBar: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .help(help)
     }
 
     private func details(_ composition: PhysicalMemoryComposition) -> some View {
@@ -180,12 +199,7 @@ struct ProcessIcon: View {
     }
 
     private var icon: NSImage? {
-        guard let path = process.executablePath else { return nil }
-        let url = URL(fileURLWithPath: path)
-        let appPath: String
-        if let range = path.range(of: ".app/", options: .caseInsensitive) { appPath = String(path[..<range.upperBound].dropLast()) }
-        else { appPath = url.path }
-        return NSWorkspace.shared.icon(forFile: appPath)
+        ProcessIconCache.shared.icon(for: process)
     }
 }
 
@@ -202,7 +216,10 @@ struct AttentionIndicators: View {
         }
     }
     private func indicator(_ icon: String, _ color: Color, _ help: String) -> some View {
-        Image(systemName: icon).font(.caption2).foregroundStyle(color).help(help + ". This is an attention indicator, not a security finding.")
+        Image(systemName: icon)
+            .font(.caption2)
+            .foregroundStyle(color)
+            .accessibilityLabel(help + ". This is an attention indicator, not a security finding.")
     }
 }
 

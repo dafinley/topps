@@ -25,12 +25,25 @@ actor DarwinProcessDataProvider: ProcessDataProvider {
     private var previousSystemTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
 
     func sample() async -> SamplingResult {
+        // Foundation metadata objects must drain per tick on the actor executor,
+        // which does not have the main run loop's per-event autorelease pool.
+        autoreleasepool { collectSample() }
+    }
+
+    func loadProcessesForPortScan() async -> [ProcessSnapshot] {
+        autoreleasepool { collectSample(updateSamplingState: false).processes }
+    }
+
+    private func collectSample(updateSamplingState: Bool = true) -> SamplingResult {
         let timestamp = Date()
         var pids = [Int32](repeating: 0, count: 65_536)
         let count = pids.withUnsafeMutableBufferPointer { pointer in
             cps_list_pids(pointer.baseAddress, Int32(pointer.count))
         }
-        guard count > 0 else { return SamplingResult(timestamp: timestamp, processes: [], system: readSystem(timestamp: timestamp, processes: [])) }
+        guard count > 0 else {
+            return SamplingResult(timestamp: timestamp, processes: [], system: updateSamplingState
+                                  ? readSystem(timestamp: timestamp, processes: []) : SystemSnapshot(timestamp: timestamp))
+        }
 
         var snapshots: [ProcessSnapshot] = []
         snapshots.reserveCapacity(Int(count))
@@ -97,12 +110,15 @@ actor DarwinProcessDataProvider: ProcessDataProvider {
                 isAccessible: info.accessible != 0
             )
             snapshots.append(snapshot)
-            previous[pid] = Previous(identity: identity, timestamp: timestamp, cpuTime: cumulative, memory: footprint, bytesRead: info.bytes_read, bytesWritten: info.bytes_written, cpuHistory: cpuHistory)
+            if updateSamplingState {
+                previous[pid] = Previous(identity: identity, timestamp: timestamp, cpuTime: cumulative, memory: footprint, bytesRead: info.bytes_read, bytesWritten: info.bytes_written, cpuHistory: cpuHistory)
+            }
         }
 
-        previous = previous.filter { seen.contains($0.value.identity) }
+        if updateSamplingState { previous = previous.filter { seen.contains($0.value.identity) } }
         metadata = metadata.filter { seen.contains($0.key) }
-        return SamplingResult(timestamp: timestamp, processes: snapshots, system: readSystem(timestamp: timestamp, processes: snapshots))
+        return SamplingResult(timestamp: timestamp, processes: snapshots, system: updateSamplingState
+                              ? readSystem(timestamp: timestamp, processes: snapshots) : SystemSnapshot(timestamp: timestamp))
     }
 
     func loadWorkingDirectory(for pid: Int32) async -> String? {
@@ -245,6 +261,7 @@ actor MockProcessDataProvider: ProcessDataProvider {
         tick += 1
         return Self.makeSample(tick: tick)
     }
+    func loadProcessesForPortScan() async -> [ProcessSnapshot] { Self.makeSample(tick: tick).processes }
     func loadWorkingDirectory(for pid: Int32) async -> String? { pid == 41022 ? "/Applications/ATOMIC_EE_1.420.4.app/Contents/Resources" : nil }
     func loadNetworkEndpoints(for pid: Int32) async -> [NetworkEndpoint] {
         guard pid == 41022 else { return [] }

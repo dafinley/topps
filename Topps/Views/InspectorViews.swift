@@ -123,7 +123,7 @@ struct ProcessInspectorView: View {
         let memoryDelta = lastMemory >= firstMemory
             ? Int64(clamping: lastMemory - firstMemory)
             : -Int64(clamping: firstMemory - lastMemory)
-        let span = history.first.map { Date().timeIntervalSince($0.timestamp) } ?? 0
+        let span = history.first.flatMap { first in history.last.map { $0.timestamp.timeIntervalSince(first.timestamp) } } ?? 0
         return VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text("HISTORY · \(history.count) SAMPLES").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)

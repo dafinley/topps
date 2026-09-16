@@ -32,7 +32,7 @@ struct SettingsView: View {
                 if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
             }
             Section("Privacy") {
-                Text("Topps runs locally. It makes no network requests and sends no analytics or process information anywhere.").foregroundStyle(.secondary)
+                Text("Topps itself runs locally and sends no analytics or process information anywhere. Storage snapshots remain in Application Support and contain paths plus aggregate sizes. Optional external tools may have their own network behavior.").foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
