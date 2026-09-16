@@ -77,7 +77,7 @@ xcodebuild \
   build
 ```
 
-For distribution, choose a Developer ID signing team and archive in Xcode. The checked-in project disables code signing for reproducible local command-line builds.
+The checked-in project disables code signing for reproducible local command-line builds. These commands do not create an App Store submission archive. See [App Store readiness](docs/app-store-readiness.md) for the distribution preparation plan.
 
 ## How sampling works
 
@@ -111,9 +111,9 @@ As a final guardrail, Topps monitors its own physical footprint and pauses sampl
 
 Memory regression coverage includes 4,000 rendered updates each for Process Tree and Applications (320 processes, process churn, expansion, collapse, and selection), with a post-warm-up footprint-growth limit, plus a 30,000-file storage scan. These bounded tests cannot prove the absence of every possible long-session leak; they exercise the actual live UI as well as the scanner.
 
-## Why App Sandbox is disabled
+## App Sandbox and App Store readiness
 
-The application target has App Sandbox disabled. Sandbox process isolation prevents a system-wide developer utility from reading many process records and from signaling user-owned processes. Topps is not designed for the Mac App Store.
+The current developer build has App Sandbox disabled to support broad process inspection and control. It is not ready for Mac App Store submission. Preparing an App Store edition requires a sandbox capability assessment and explicit decisions about its feature set; see [App Store readiness](docs/app-store-readiness.md).
 
 Disabling App Sandbox does not grant root access. Standard Unix permissions and macOS protections still apply. A protected or other-user process may expose only its PID and basic BSD record; unavailable metrics are displayed as **Unavailable** rather than inferred.
 
