@@ -1,6 +1,6 @@
 # Mac App Store readiness
 
-Assessed September 16, 2026 against source commit `3b97782`.
+Assessed September 16, 2026 against the source tree now tagged `v0.2.0-alpha.1` (original commit `3b97782`; see the [history record](releases.md)).
 
 Status: **not submission-ready**. This is a preparation checklist, not an App Review approval prediction. The current developer build remains unchanged; no signing credentials, entitlements, store records, or uploads have been configured.
 

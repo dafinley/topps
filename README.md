@@ -4,6 +4,8 @@
 
 Topps is a native macOS process explorer for developers. Follow a memory-heavy Python process back through its ancestry, find the server holding a port, or see which build folders keep growing. One window, with the details a terminal process list leaves you digging for.
 
+Source preview · [Release notes](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
 ![Topps process explorer with physical-memory breakdown, footprint and resident memory, and process ancestry](docs/images/processes.png)
 
 ## Get running
@@ -60,3 +62,7 @@ Normal operation doesn't require root. macOS can still hide protected processes 
 - [Development](docs/development.md) — builds, tests, architecture, and memory safeguards.
 - [Distribution](docs/distribution.md) — a small team beta now, signed downloads later.
 - [Memory investigation](docs/memory-validation-2026-09-16.md) — what we found, changed, and measured.
+
+## Project status
+
+Releases currently mark alpha source snapshots, not signed app downloads. See the [release process](docs/releases.md) for versioning and verification. A license has not been selected yet; these contributor docs do not change the project's licensing terms.

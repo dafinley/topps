@@ -6,6 +6,8 @@
 
 The repository supports local source builds with `./run.sh`. It does **not** yet include a team-beta packaging command, a signed/notarized download, or an automatic updater. A successful local build is not a release check.
 
+The [changelog](../CHANGELOG.md) describes tagged source milestones. Tags and source archives are not prebuilt app downloads; the [release process](releases.md) keeps that distinction explicit.
+
 ## A small team beta
 
 The simplest planned delivery is a ZIP shared privately with the team—no website or custom installer needed.
